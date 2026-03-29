@@ -1496,18 +1496,10 @@ master_key: Optional[str] = None
 config_agents: Optional[List[AgentConfig]] = None
 otel_logging = False
 prisma_client: Optional[PrismaClient] = None
-        shared_aiohttp_session: Optional[
-            "ClientSession"
-        ] = None  # Global shared session for connection reuse
-        user_api_key_cache = DualCache(
-            default_in_memory_ttl=UserAPIKeyCacheTTLEnum.in_memory_cache_ttl.value
-        )
-        spend_counter_cache = DualCache(
-            default_in_memory_ttl=UserAPIKeyCacheTTLEnum.in_memory_cache_ttl.value
-        )
-        model_max_budget_limiter = _PROXY_VirtualKeyModelMaxBudgetLimiter(
-            dual_cache=user_api_key_cache
-        )
+shared_aiohttp_session: Optional["ClientSession"] = None  # Global shared session for connection reuse
+user_api_key_cache = DualCache(default_in_memory_ttl=UserAPIKeyCacheTTLEnum.in_memory_cache_ttl.value)
+spend_counter_cache = DualCache(default_in_memory_ttl=UserAPIKeyCacheTTLEnum.in_memory_cache_ttl.value)
+model_max_budget_limiter = _PROXY_VirtualKeyModelMaxBudgetLimiter(dual_cache=user_api_key_cache)
 litellm.logging_callback_manager.add_litellm_callback(model_max_budget_limiter)
 redis_usage_cache: Optional[RedisCache] = None  # redis cache used for tracking spend, tpm/rpm limits
 polling_via_cache_enabled: Union[Literal["all"], List[str], bool] = False
@@ -1672,9 +1664,7 @@ async def get_current_spend(counter_key: str, fallback_spend: float) -> float:
     # 1. Try Redis first (cross-pod authoritative)
     if spend_counter_cache.redis_cache is not None:
         try:
-            val = await spend_counter_cache.redis_cache.async_get_cache(
-                key=counter_key
-            )
+            val = await spend_counter_cache.redis_cache.async_get_cache(key=counter_key)
             if val is not None:
                 return float(val)
         except Exception as e:
@@ -1719,11 +1709,7 @@ async def increment_spend_counters(
         # if a raw key somehow arrives, hash it; otherwise use as-is to
         # avoid double-hashing (budget checks read valid_token.token which
         # is single-hashed).
-        hashed_token = (
-            hash_token(token=token)
-            if isinstance(token, str) and token.startswith("sk-")
-            else token
-        )
+        hashed_token = hash_token(token=token) if isinstance(token, str) and token.startswith("sk-") else token
         await _init_and_increment_spend_counter(
             counter_key=f"spend:key:{hashed_token}",
             source_cache_key=hashed_token,
@@ -1774,13 +1760,9 @@ async def _init_and_increment_spend_counter(
             else:
                 base_spend = getattr(source, "spend", 0.0) or 0.0
         if base_spend > 0:
-            await spend_counter_cache.async_increment_cache(
-                key=counter_key, value=base_spend
-            )
+            await spend_counter_cache.async_increment_cache(key=counter_key, value=base_spend)
 
-    await spend_counter_cache.async_increment_cache(
-        key=counter_key, value=increment
-    )
+    await spend_counter_cache.async_increment_cache(key=counter_key, value=increment)
 
 
 async def update_cache(  # noqa: PLR0915
@@ -2201,9 +2183,7 @@ def _write_health_state_to_router_cache(
                 sum(1 for s in states.values() if not s.get("is_healthy")),
             )
     except Exception as e:
-        verbose_proxy_logger.warning(
-            "Failed to write health state to router cache: %s", str(e)
-        )
+        verbose_proxy_logger.warning("Failed to write health state to router cache: %s", str(e))
 
 
 async def _run_background_health_check():
@@ -2771,9 +2751,7 @@ class ProxyConfig:
         if environment_variables:
             for key, value in environment_variables.items():
                 if key in self._BLOCKED_ENV_KEYS:
-                    verbose_proxy_logger.warning(
-                        "Skipping blocked environment variable key: %s", key
-                    )
+                    verbose_proxy_logger.warning("Skipping blocked environment variable key: %s", key)
                     continue
                 #########################################################
                 # handles this scenario:
@@ -3259,12 +3237,8 @@ class ProxyConfig:
             health_check_concurrency = general_settings.get("health_check_concurrency", None)
             health_check_details = general_settings.get("health_check_details", True)
             # Health-check-driven routing (opt-in, passes through to Router later)
-            _enable_hc_routing = general_settings.get(
-                "enable_health_check_routing", False
-            )
-            _hc_staleness = general_settings.get(
-                "health_check_staleness_threshold", None
-            )
+            _enable_hc_routing = general_settings.get("enable_health_check_routing", False)
+            _hc_staleness = general_settings.get("health_check_staleness_threshold", None)
             verbose_proxy_logger.info(
                 "background_health_check_config enabled=%s shared=%s interval_seconds=%s max_concurrency=%s details=%s health_check_routing=%s",
                 use_background_health_checks,
